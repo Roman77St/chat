@@ -14,6 +14,6 @@ func New() *Config {
 	}
 }
 
-func (c *Config) Adress() string {
+func (c *Config) Address() string {
 	return c.Host + ":" + c.Port
 }
