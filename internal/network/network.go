@@ -1,10 +1,13 @@
 package network
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
 )
+
+var ErrRoomFull = errors.New("room full")
 
 type TCPServer struct {
 	mu    sync.RWMutex
@@ -28,7 +31,7 @@ func (s *TCPServer) Accept(ln net.Listener) (net.Conn, error) {
 	if len(s.peers) >= 2 {
 		s.mu.RUnlock()
 		conn.Close() // "Тихое" закрытие для лишнего участника
-		return nil, fmt.Errorf("room full")
+		return nil, ErrRoomFull
 	}
 	s.mu.RUnlock()
 

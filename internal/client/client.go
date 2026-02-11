@@ -2,15 +2,18 @@ package client
 
 import (
 	"bufio"
+	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"os"
 )
 
 // Start запускает консольный клиент
 func Start(addr string) {
-	conn, err := net.Dial("tcp", addr)
+	conf := &tls.Config{
+    	InsecureSkipVerify: true, // Игнорируем проверку цепочки доверия для самоподписанного ключа
+	}
+	conn, err := tls.Dial("tcp", addr, conf)
 	if err != nil {
 		fmt.Printf("Ошибка подключения: %v\n", err)
 		return
