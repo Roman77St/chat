@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CHAT</title>
+</head>
+<body>
+    <h3>Чат на Go</h3>
+    <input id="input" type="text" placeholder="Напиши что-нибудь...">
+    <button onclick="sendMsg()">Отправить</button>
+    <pre id="output"></pre>
+
+    <script>
+        const socket = new WebSocket("ws://localhost:8080/ws");
+        const output = document.getElementById("output");
+
+        socket.onmessage = (e) => {
+            output.innerHTML += "Получено: " + e.data + "\n";
+        };
+
+        socket.onclose = () => output.innerHTML += "СОЕДИНЕНИЕ ЗАКРЫТО\n";
+        socket.onerror = (e) => console.log("Ошибка:", e);
+
+        function sendMsg() {
+            const input = document.getElementById("input");
+            socket.send(input.value);
+            input.value = "";
+        }
+    </script>
+
+</body>
+</html>
