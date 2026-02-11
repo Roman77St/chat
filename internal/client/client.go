@@ -2,60 +2,60 @@ package client
 
 import (
 	"bufio"
-	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"os"
+
+	"github.com/Roman77St/chat/internal/security"
 )
 
-// Start запускает консольный клиент
 func Start(addr string) {
-	conf := &tls.Config{
-    	InsecureSkipVerify: true, // Игнорируем проверку цепочки доверия для самоподписанного ключа
-	}
-	conn, err := tls.Dial("tcp", addr, conf)
-	if err != nil {
-		fmt.Printf("Ошибка подключения: %v\n", err)
-		return
-	}
-	defer conn.Close()
+    conn, _ := net.Dial("tcp", addr)
+    defer conn.Close()
 
-	fmt.Println("Подключено...")
+    // 1. Сначала вводим пароль (он нужен для генерации ключа)
+    fmt.Print("Введите код доступа: ")
+    var password string
+    fmt.Scanln(&password)
 
-	// Горутина для чтения входящих данных (от собеседника)
+    fmt.Println("Ожидание синхронизации...")
+
+    // Сигнал READY от сервера
+    readyBuf := make([]byte, 16)
+    io.ReadFull(conn, readyBuf)
+
+    // 2. Handshake
+    priv, pubBytes, _ := security.GenerateDHKeys()
+    conn.Write(pubBytes)
+
+    remotePub := make([]byte, 65)
+    io.ReadFull(conn, remotePub)
+
+    // 3. Генерация ключа с использованием пароля
+    chatKey, _ := security.DeriveKey(priv, remotePub, password)
+    fmt.Println("Канал инициализирован.")
+
 	go func() {
-		// Используем буфер побольше для приема
 		buf := make([]byte, 4096)
 		for {
 			n, err := conn.Read(buf)
+			if err != nil { return }
+
+			decrypted, err := security.Decrypt(chatKey, buf[:n])
 			if err != nil {
-				if err == io.EOF {
-					fmt.Println("\nСоединение закрыто сервером.")
-				} else {
-					fmt.Printf("\nОшибка чтения: %v\n", err)
-				}
-				os.Exit(0) // Завершаем клиент при обрыве связи
-				return
+				// Если пароль неверный, AES-GCM не сможет проверить подпись пакета
+				fmt.Printf("\nОшибка дешифровки")
+				continue
 			}
-			// Печатаем полученное сообщение
-			fmt.Printf("\nСобеседник: %s\n> ", string(buf[:n]))
+			fmt.Printf("\n>: %s\n> ", string(decrypted))
 		}
 	}()
 
-	// Основной цикл: чтение ввода из консоли и отправка в сокет
 	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Print("> ")
 	for scanner.Scan() {
-		text := scanner.Text()
-		if text == "" {
-			continue
-		}
-
-		_, err := conn.Write([]byte(text))
-		if err != nil {
-			fmt.Printf("Не удалось отправить: %v\n", err)
-			break
-		}
-		fmt.Print("> ")
+		encrypted, _ := security.Encrypt(chatKey, scanner.Bytes())
+		conn.Write(encrypted)
+		fmt.Print("")
 	}
 }

@@ -1,32 +1,28 @@
 package main
 
 import (
-	"crypto/tls"
 	"fmt"
+	"net"
 
 	"github.com/Roman77St/chat/internal/config"
 	"github.com/Roman77St/chat/internal/network"
-	"github.com/Roman77St/chat/internal/security"
 )
 
 func main() {
-	cnf := config.New()
+	cfg := config.New()
 	srv := network.NewTCPServer()
 
-	cert, _ := security.GenerateInMemoryCert()
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-	}
-
-	ln, err := tls.Listen("tcp", cnf.Address(), tlsConfig)
-
+	ln, err := net.Listen("tcp", cfg.Address())
 	if err != nil {
-		fmt.Printf("Не удалось запустить: %v\n", err)
+		fmt.Printf("Критическая ошибка: %v\n", err)
 		return
 	}
 
-	fmt.Printf("TCP server started on %s\n", cnf.Address())
+	fmt.Printf("TCP server started on %s\n", cfg.Address())
 
-	srv.Run(ln)
+	// Запуск сервера. Вторым аргументом передаем логику того,
+	// что делать с полученным сообщением.
+	srv.Run(ln, func(sender net.Conn, data []byte) {
+		srv.Broadcast(sender, data)
+	})
 }

@@ -2,42 +2,53 @@ package network
 
 import (
 	"fmt"
-	"io"
 	"net"
 )
 
-func (s *TCPServer) handleClient(conn net.Conn) {
+func (s *TCPServer) Run(ln net.Listener, onMsg func(conn net.Conn, data []byte)) {
+	for {
+		conn, err := s.Accept(ln)
+		if err != nil {
+			// Если ошибка вызвана тем, что комната полна
+			if err.Error() == "room full" {
+				s.Alert("Попытка внешнего присоединения!")
+			} else {
+				fmt.Printf("Ошибка сетевого уровня: %v\n", err)
+			}
+			continue
+		}
+
+		s.mu.RLock()
+        count := len(s.peers)
+        s.mu.RUnlock()
+
+		if count == 2 {
+            // Даем сигнал обоим: "Поехали!"
+            s.Alert("READY")
+        }
+
+		// Запускаем обработку конкретного клиента
+		go s.handleClient(conn, onMsg)
+	}
+}
+
+// Внутренний метод для чтения данных от клиента
+func (s *TCPServer) handleClient(conn net.Conn, onMsg func(conn net.Conn, data []byte)) {
 	defer s.Remove(conn)
 
-	// Буфер для чтения данных
 	buf := make([]byte, 4096)
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
-			if err != io.EOF {
-				fmt.Printf("Ошибка чтения: %v\n", err)
-			}
-			break
+			break // Выход при разрыве связи или EOF
 		}
 
-		// Пересылаем данные второму участнику
-		s.Broadcast(conn, buf[:n])
+		// Вызываем callback (рассылку)
+		onMsg(conn, buf[:n])
 	}
 }
 
-func (s *TCPServer) Run(ln net.Listener)  {
-	// Основной цикл
-	for {
-		conn, err := s.Accept(ln)
-		if err != nil {
-			// Если комната полна, оповещаем текущих участников
-			if err == ErrRoomFull {
-				s.Broadcast(nil, []byte("SYSTEM: Попытка внешнего присоединения!\n"))
-			} else {
-				fmt.Println(err)
-			}
-			continue
-		}
-		go s.handleClient(conn)
-	}
+// Alert отправляет системное сообщение всем участникам
+func (s *TCPServer) Alert(msg string) {
+	s.Broadcast(nil, []byte("[SYSTEM]: READY "))
 }
