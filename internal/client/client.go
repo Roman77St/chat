@@ -7,55 +7,105 @@ import (
 	"net"
 	"os"
 
-	"github.com/Roman77St/chat/internal/security"
+	"github.com/Roman77St/chat/pkg/protocol"
+	"github.com/Roman77St/chat/pkg/security"
 )
 
 func Start(addr string) {
-    conn, _ := net.Dial("tcp", addr)
+    conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		fmt.Printf("Ошибка подключения: %v\n", err)
+		return
+	}
     defer conn.Close()
 
-    // 1. Сначала вводим пароль (он нужен для генерации ключа)
-    fmt.Print("Введите код доступа: ")
-    var password string
-    fmt.Scanln(&password)
+    // Сначала вводим пароль (он нужен для генерации ключа)
+    password := getPassword(os.Stdin)
 
     fmt.Println("Ожидание синхронизации...")
 
     // Сигнал READY от сервера
-    readyBuf := make([]byte, 16)
-    io.ReadFull(conn, readyBuf)
+	if err := connectionReady(conn); err != nil {
+		fmt.Printf("Ошибка синхронизации: %v\n", err)
+		return
+	}
 
-    // 2. Handshake
-    priv, pubBytes, _ := security.GenerateDHKeys()
-    conn.Write(pubBytes)
+	chatKey, err := genKey(conn, password)
+	if err != nil {
+		fmt.Printf("Ошибка получения ключа: %v\n", err)
+		return
+	}
 
-    remotePub := make([]byte, 65)
-    io.ReadFull(conn, remotePub)
-
-    // 3. Генерация ключа с использованием пароля
-    chatKey, _ := security.DeriveKey(priv, remotePub, password)
     fmt.Println("Канал инициализирован.")
 
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := conn.Read(buf)
-			if err != nil { return }
+	startChatLoop(conn, chatKey, os.Stdout, os.Stdin)
 
-			decrypted, err := security.Decrypt(chatKey, buf[:n])
-			if err != nil {
-				// Если пароль неверный, AES-GCM не сможет проверить подпись пакета
-				fmt.Printf("\nОшибка дешифровки")
-				continue
-			}
-			fmt.Printf("\n>: %s\n> ", string(decrypted))
-		}
-	}()
+}
 
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		encrypted, _ := security.Encrypt(chatKey, scanner.Bytes())
-		conn.Write(encrypted)
-		fmt.Print("")
+func getPassword(r io.Reader) string {
+	fmt.Print("Введите код доступа: ")
+    var password string
+    fmt.Fscanln(r, &password)
+	return password
+}
+
+func connectionReady(conn net.Conn) error {
+	fmt.Println("Ожидание собеседника...")
+	return protocol.ReadReady(conn)
+}
+
+func genKey(conn net.Conn, password string) ([]byte, error) {
+	    // 2. Handshake
+    priv, pubBytes, err := security.GenerateDHKeys()
+	if err != nil {
+		fmt.Printf("Ошибка генерации ключа: %v\n", err)
+		return nil, err
 	}
+    conn.Write(pubBytes)
+
+	remotePub := make([]byte, protocol.PubKeySize)
+    io.ReadFull(conn, remotePub)
+	chatKey, err := security.DeriveKey(priv, remotePub, password)
+	if err != nil {
+		fmt.Printf("Ошибка генерации ключа: %v\n", err)
+		return nil, err
+	}
+	return chatKey, nil
+}
+
+func receiveAndDecrypt(w io.Writer, conn net.Conn, key []byte) {
+	buf := make([]byte, 4096)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil { return }
+
+		decrypted, err := security.Decrypt(key, buf[:n])
+		if err != nil {
+			// Если пароль неверный, AES-GCM не сможет проверить подпись пакета
+			fmt.Printf("\nОшибка дешифровки")
+			continue
+		}
+		fmt.Fprintf(w, "\n>: %s\n> ", string(decrypted))
+	}
+}
+
+func readAndEncrypt(r io.Reader, conn net.Conn, key []byte) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		encrypted, err := security.Encrypt(key, scanner.Bytes())
+		if err != nil {
+			fmt.Printf("\nОшибка шифровки")
+			continue
+		}
+		conn.Write(encrypted)
+		fmt.Print(">")
+	}
+}
+
+func startChatLoop (conn net.Conn, key []byte, w io.Writer, r io.Reader)  {
+
+	go receiveAndDecrypt(w, conn, key)
+
+	readAndEncrypt(r, conn, key)
+
 }
