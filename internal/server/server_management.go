@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/Roman77St/chat/pkg/protocol"
 )
@@ -12,17 +13,44 @@ func (s *TCPServer) Accept(ln net.Listener) (net.Conn, error) {
 }
 
 // JoinRoom логика входа в комнату
-func (s *TCPServer) JoinRoom(roomID string, conn net.Conn) ([]net.Conn, error) {
+func (s *TCPServer) JoinRoom(roomID string, conn net.Conn, timeout time.Duration) ([]net.Conn, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	peers := s.rooms[roomID]
-	if len(peers) >= 2 {
+	room, exists := s.rooms[roomID]
+	if !exists {
+        room = &Room{
+            Peers: make([]net.Conn, 0, 2),
+        }
+
+        // Запускаем таймер
+        room.Timer = time.AfterFunc(timeout, func() {
+            s.mu.Lock()
+            defer s.mu.Unlock()
+
+            // Если комната всё еще существует и там только 1 человек — удаляем
+            if r, ok := s.rooms[roomID]; ok && len(r.Peers) < 2 {
+                fmt.Printf("[DEBUG]: Комната %s удалена по таймауту\n", roomID)
+                for _, p := range r.Peers {
+                    p.Close()
+                }
+                delete(s.rooms, roomID)
+            }
+        })
+        s.rooms[roomID] = room
+    }
+
+	if len(room.Peers) >= 2 {
 		return nil, protocol.ErrRoomFull
 	}
 
-	s.rooms[roomID] = append(peers, conn)
-	return s.rooms[roomID], nil
+	room.Peers = append(room.Peers, conn)
+
+	if len(room.Peers) == 2 && room.Timer != nil {
+        room.Timer.Stop()
+    }
+
+	return room.Peers, nil
 }
 
 // Рассылка (Broadcast) через чистый TCP
@@ -30,7 +58,8 @@ func (s *TCPServer) Broadcast(roomID string, sender net.Conn, data []byte) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for _, peer := range s.rooms[roomID] {
+	room := s.rooms[roomID]
+	for _, peer := range room.Peers {
 		if peer != sender {
 			_, err := peer.Write(data)
 			if err != nil {
@@ -45,14 +74,22 @@ func (s *TCPServer) Remove(roomID string, conn net.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	peers := s.rooms[roomID]
-	for i, p := range peers {
+	room, ok := s.rooms[roomID]
+	if !ok {
+		conn.Close()
+		return
+	}
+
+	for i, p := range room.Peers {
 		if p == conn {
-			s.rooms[roomID] = append(peers[:i], peers[i+1:]...)
+			room.Peers = append(room.Peers[:i], room.Peers[i+1:]...)
 			break
 		}
 	}
-	if len(s.rooms[roomID]) == 0 {
+	if len(room.Peers) == 0 {
+		if room.Timer != nil {
+			room.Timer.Stop()
+		}
 		delete(s.rooms, roomID)
 	}
 	conn.Close()
@@ -65,8 +102,8 @@ func (s *TCPServer) Alert(roomID string, msg string) {
 	defer s.mu.RUnlock()
 
 	data := []byte(msg)
-	peers := s.rooms[roomID]
-	for _, peer := range peers {
+	room := s.rooms[roomID]
+	for _, peer := range room.Peers {
 		_, err := peer.Write(data)
 		if err != nil {
 			fmt.Printf("Ошибка отправки Alert собеседнику: %v\n", err)

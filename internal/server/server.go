@@ -5,19 +5,24 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/Roman77St/chat/internal/config"
 	"github.com/Roman77St/chat/pkg/protocol"
 )
+type Room struct {
+    Peers   []net.Conn
+    Timer   *time.Timer
+}
 
 type TCPServer struct {
 	mu    sync.RWMutex
-	rooms map[string][]net.Conn
+	rooms map[string]*Room
 }
 
 func NewTCPServer() *TCPServer {
 	return &TCPServer{
-		rooms: make(map[string][]net.Conn),
+		rooms: make(map[string]*Room),
 	}
 }
 
@@ -41,13 +46,12 @@ func Run(cfg *config.Config) {
 			continue
 		}
 
-		go s.handleClient(conn)
+		go s.handleClient(conn, cfg.RoomTimeout)
 
 	}
 }
 
-// Внутренний метод для чтения данных от клиента
-func (s *TCPServer) handleClient(conn net.Conn) {
+func (s *TCPServer) handleClient(conn net.Conn, timeout time.Duration) {
 	rawID, err := protocol.ReadRoomID(conn)
 	if err != nil {
 		conn.Close()
@@ -55,9 +59,9 @@ func (s *TCPServer) handleClient(conn net.Conn) {
 	}
 	roomID := hex.EncodeToString(rawID)
 
-	peers, err := s.JoinRoom(roomID, conn)
+	peers, err := s.JoinRoom(roomID, conn, timeout)
 	if err != nil {
-		// Если комната полна — тихо закрываем, как ты и хотел
+		// Если комната полна — тихо закрываем
 		conn.Close()
 		s.Alert(roomID, "[SYSTEM]: Попытка входа в полную комнату.")
 		return
@@ -65,7 +69,7 @@ func (s *TCPServer) handleClient(conn net.Conn) {
 
 	defer s.Remove(roomID, conn)
 
-	// 3. Если пара собралась — шлем READY
+	// Если пара собралась — шлем READY
 	if len(peers) == 2 {
 		s.Alert(roomID, protocol.ReadySignal)
 	}

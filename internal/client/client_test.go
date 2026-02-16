@@ -11,12 +11,12 @@ import (
 	"github.com/Roman77St/chat/pkg/security"
 )
 
-func TestGetPassword(t *testing.T) {
+func TestGetString(t *testing.T) {
 	// Имитируем ввод пользователя: пишем пароль и символ переноса строки
 	input := "my_secret_password\n"
 	reader := strings.NewReader(input)
 
-	password := getPassword(reader, input)
+	password := getString(reader, input)
 
 	if password != "my_secret_password" {
 		t.Errorf("Ожидалось 'my_secret_password', получено '%s'", password)

@@ -12,7 +12,8 @@ import (
 	"github.com/Roman77St/chat/pkg/security"
 )
 
-func Start(addr string) {
+func Start() {
+	addr := getString(os.Stdin, "Введите адрес сервера (например, localhost:8080):")
     conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		fmt.Printf("Ошибка подключения: %v\n", err)
@@ -20,7 +21,7 @@ func Start(addr string) {
 	}
     defer conn.Close()
 
-    roomPass := getPassword(os.Stdin, "Введите ID комнаты (пароль): ")
+    roomPass := getString(os.Stdin, "Введите ID комнаты (пароль): ")
 
 	hash := sha256.Sum256([]byte(roomPass))
     roomID := hash[:16]
@@ -40,21 +41,21 @@ func Start(addr string) {
 		return
 	}
 
-	password := getPassword(os.Stdin, "Введите код доступа: ")
-	
+	password := getString(os.Stdin, "Введите код доступа: ")
+
 	chatKey, err := genKey(conn, password)
 	if err != nil {
 		fmt.Printf("Ошибка получения ключа: %v\n", err)
 		return
 	}
 
-    fmt.Println("Канал инициализирован.")
+    fmt.Println("Канал инициализирован.\n>")
 
 	startChatLoop(conn, chatKey, os.Stdout, os.Stdin)
 
 }
 
-func getPassword(r io.Reader, text string) string {
+func getString(r io.Reader, text string) string {
 	fmt.Print(text)
     var password string
     fmt.Fscanln(r, &password)
@@ -97,7 +98,7 @@ func receiveAndDecrypt(w io.Writer, conn net.Conn, key []byte) {
 			fmt.Printf("\nОшибка дешифровки\n> ")
 			continue
 		}
-		fmt.Fprintf(w, "\npeer > %s\n> ", string(decrypted))
+		fmt.Fprintf(w, "\npeer: > %s\n> ", string(decrypted))
 	}
 }
 
