@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net"
@@ -19,8 +20,17 @@ func Start(addr string) {
 	}
     defer conn.Close()
 
+    roomPass := getPassword(os.Stdin, "Введите ID комнаты (пароль): ")
+
+	hash := sha256.Sum256([]byte(roomPass))
+    roomID := hash[:16]
+
+	if err := protocol.SendRoomID(conn, roomID); err != nil {
+        fmt.Println("Ошибка входа в комнату:", err)
+		return
+    }
+
     // Сначала вводим пароль (он нужен для генерации ключа)
-    password := getPassword(os.Stdin)
 
     fmt.Println("Ожидание синхронизации...")
 
@@ -30,6 +40,8 @@ func Start(addr string) {
 		return
 	}
 
+	password := getPassword(os.Stdin, "Введите код доступа: ")
+	
 	chatKey, err := genKey(conn, password)
 	if err != nil {
 		fmt.Printf("Ошибка получения ключа: %v\n", err)
@@ -42,8 +54,8 @@ func Start(addr string) {
 
 }
 
-func getPassword(r io.Reader) string {
-	fmt.Print("Введите код доступа: ")
+func getPassword(r io.Reader, text string) string {
+	fmt.Print(text)
     var password string
     fmt.Fscanln(r, &password)
 	return password

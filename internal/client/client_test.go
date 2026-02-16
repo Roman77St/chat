@@ -16,7 +16,7 @@ func TestGetPassword(t *testing.T) {
 	input := "my_secret_password\n"
 	reader := strings.NewReader(input)
 
-	password := getPassword(reader)
+	password := getPassword(reader, input)
 
 	if password != "my_secret_password" {
 		t.Errorf("Ожидалось 'my_secret_password', получено '%s'", password)

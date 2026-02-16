@@ -7,37 +7,30 @@ import (
 	"github.com/Roman77St/chat/pkg/protocol"
 )
 
-// Проверка и принятие соединения
 func (s *TCPServer) Accept(ln net.Listener) (net.Conn, error) {
-	conn, err := ln.Accept()
-	if err != nil {
-		return nil, err
-	}
+	return ln.Accept()
+}
 
-	s.mu.RLock()
-	isFull := len(s.peers) >= 2
-	s.mu.RUnlock()
+// JoinRoom логика входа в комнату
+func (s *TCPServer) JoinRoom(roomID string, conn net.Conn) ([]net.Conn, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if isFull {
-		conn.Close()
-		// Всё равно, какое будет сообщение. У подключенных собеседников будет сообщение "Ошибка дешифровки."
-		s.Alert("[SYSTEM]: Попытка внешнего присоединения.")
+	peers := s.rooms[roomID]
+	if len(peers) >= 2 {
 		return nil, protocol.ErrRoomFull
 	}
 
-	s.mu.Lock()
-	s.peers = append(s.peers, conn)
-	s.mu.Unlock()
-
-	return conn, nil
+	s.rooms[roomID] = append(peers, conn)
+	return s.rooms[roomID], nil
 }
 
 // Рассылка (Broadcast) через чистый TCP
-func (s *TCPServer) Broadcast(sender net.Conn, data []byte) {
+func (s *TCPServer) Broadcast(roomID string, sender net.Conn, data []byte) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for _, peer := range s.peers {
+	for _, peer := range s.rooms[roomID] {
 		if peer != sender {
 			_, err := peer.Write(data)
 			if err != nil {
@@ -48,42 +41,35 @@ func (s *TCPServer) Broadcast(sender net.Conn, data []byte) {
 }
 
 // Удаление клиента
-func (s *TCPServer) Remove(conn net.Conn) {
+func (s *TCPServer) Remove(roomID string, conn net.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for i, p := range s.peers {
+	peers := s.rooms[roomID]
+	for i, p := range peers {
 		if p == conn {
-			s.peers = append(s.peers[:i], s.peers[i+1:]...)
+			s.rooms[roomID] = append(peers[:i], peers[i+1:]...)
 			break
 		}
+	}
+	if len(s.rooms[roomID]) == 0 {
+		delete(s.rooms, roomID)
 	}
 	conn.Close()
 }
 
 
 // Alert отправляет системное сообщение всем участникам
-func (s *TCPServer) Alert(msg string) {
+func (s *TCPServer) Alert(roomID string, msg string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	data := []byte(msg)
-
-	for _, peer := range s.peers {
+	peers := s.rooms[roomID]
+	for _, peer := range peers {
 		_, err := peer.Write(data)
 		if err != nil {
 			fmt.Printf("Ошибка отправки Alert собеседнику: %v\n", err)
 		}
 	}
-}
-
-func (s *TCPServer) ConfirmEnter () {
-		s.mu.RLock()
-        count := len(s.peers)
-        s.mu.RUnlock()
-
-		if count == 2 {
-            // Даем сигнал о готовности обоим
-            s.Alert(protocol.ReadySignal)
-        }
 }

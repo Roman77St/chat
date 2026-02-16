@@ -12,6 +12,7 @@ const (
 	ReadySignal = "[SYSTEM]: READY "
 	// Размер публичного ключа P256
 	PubKeySize = 65
+	RoomIDSize = 16
 )
 
 var (
@@ -35,4 +36,20 @@ func ReadReady(r io.Reader) error {
 		return ErrProtocolMismatch
 	}
 	return nil
+}
+
+// SendRoomID отправляет идентификатор комнаты серверу
+func SendRoomID(w io.Writer, roomID []byte) error {
+	_, err := w.Write(roomID)
+	return err
+}
+
+// ReadRoomID читает идентификатор комнаты от клиента
+func ReadRoomID(r io.Reader) ([]byte, error) {
+	buf := make([]byte, RoomIDSize)
+	_, err := io.ReadFull(r, buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf, nil
 }
