@@ -16,6 +16,7 @@ const (
 
 var (
 	ErrProtocolMismatch = errors.New("protocol mismatch: invalid signal")
+	ErrRoomFull = errors.New("room full")
 )
 
 // SendReady отправляет сигнал готовности в поток

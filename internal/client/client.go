@@ -82,10 +82,10 @@ func receiveAndDecrypt(w io.Writer, conn net.Conn, key []byte) {
 		decrypted, err := security.Decrypt(key, buf[:n])
 		if err != nil {
 			// Если пароль неверный, AES-GCM не сможет проверить подпись пакета
-			fmt.Printf("\nОшибка дешифровки")
+			fmt.Printf("\nОшибка дешифровки\n> ")
 			continue
 		}
-		fmt.Fprintf(w, "\n>: %s\n> ", string(decrypted))
+		fmt.Fprintf(w, "\npeer > %s\n> ", string(decrypted))
 	}
 }
 
@@ -98,7 +98,7 @@ func readAndEncrypt(r io.Reader, conn net.Conn, key []byte) {
 			continue
 		}
 		conn.Write(encrypted)
-		fmt.Print(">")
+		fmt.Print("> ")
 	}
 }
 
