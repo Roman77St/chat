@@ -4,9 +4,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"io"
+	"math/big"
+	"time"
 )
 
 // Генерация пары ключей для обмена
@@ -60,4 +67,42 @@ func Decrypt(key, ciphertext []byte) ([]byte, error) {
 	nonceSize := aesgcm.NonceSize()
 	nonce, actualCiphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
 	return aesgcm.Open(nil, nonce, actualCiphertext, nil)
+}
+
+// GenerateInMemoryCert создает сертификат и ключ, которые живут только в RAM.
+func GenerateInMemoryCert() (tls.Certificate, error) {
+	// 1. Генерируем ключи Ed25519
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	// 2. Настраиваем шаблон сертификата
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{"Secret Chat Inc"},
+			CommonName:   "localhost",
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().Add(time.Hour * 24), // Сертификат живет 24 часа
+
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	// 3. Создаем сертификат в формате DER (бинарный)
+	derBytes, _ := x509.CreateCertificate(rand.Reader, &template, &template, pub, priv)
+
+	// 4. Кодируем в PEM формат (в памяти)
+	certPem := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	keyPem := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
+
+	// 5. Возвращаем готовый для TLS объект
+	return tls.X509KeyPair(certPem, keyPem)
 }

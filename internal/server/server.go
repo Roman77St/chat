@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/Roman77St/chat/internal/config"
 	"github.com/Roman77St/chat/pkg/protocol"
+	"github.com/Roman77St/chat/pkg/security"
 )
 type Room struct {
     Peers   []net.Conn
@@ -30,13 +32,26 @@ func Run(cfg *config.Config) {
 
 	s := NewTCPServer()
 
-	ln, err := net.Listen("tcp", cfg.Address())
+	// Генерируем сертификат прямо в RAM
+    cert, err := security.GenerateInMemoryCert()
+    if err != nil {
+        fmt.Println(err)
+		return
+    }
+
+	tlsConfig := &tls.Config{
+        Certificates: []tls.Certificate{cert},
+        // Рекомендуется явно указать современные протоколы
+        MinVersion: tls.VersionTLS12,
+    }
+
+	ln, err := tls.Listen("tcp", cfg.Address(), tlsConfig)
 	if err != nil {
 		fmt.Printf("Критическая ошибка: %v\n", err)
 		return
 	}
 
-	fmt.Printf("TCP server started on %s\n", cfg.Address())
+	fmt.Printf("TCP-TLS server started on %s\n", cfg.Address())
 
 
 	for {

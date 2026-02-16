@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"crypto/sha256"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -14,7 +15,10 @@ import (
 
 func Start() {
 	addr := getString(os.Stdin, "Введите адрес сервера (например, localhost:8080):")
-    conn, err := net.Dial("tcp", addr)
+	conf := &tls.Config{
+    	InsecureSkipVerify: true, // ОБЯЗАТЕЛЬНО для самоподписанных сертификатов в RAM
+	}
+    conn, err := tls.Dial("tcp", addr, conf)
 	if err != nil {
 		fmt.Printf("Ошибка подключения: %v\n", err)
 		return
@@ -49,7 +53,7 @@ func Start() {
 		return
 	}
 
-    fmt.Println("Канал инициализирован.\n>")
+    fmt.Print("Канал инициализирован.\n>")
 
 	startChatLoop(conn, chatKey, os.Stdout, os.Stdin)
 
