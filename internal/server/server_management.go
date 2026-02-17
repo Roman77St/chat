@@ -9,7 +9,29 @@ import (
 )
 
 func (s *TCPServer) Accept(ln net.Listener) (net.Conn, error) {
-	return ln.Accept()
+	conn, err := ln.Accept()
+	if err != nil {
+		return nil, err
+	}
+
+	// Извлекаем только IP (без порта)
+	host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	s.ipsMu.Lock()
+	if s.ips[host] >= s.maxConnPerIP {
+		s.ipsMu.Unlock()
+		fmt.Printf("[SECURITY]: Лимит соединений превышен для IP: %s\n", host)
+		conn.Close()
+		return nil, fmt.Errorf("too many connections from %s", host)
+	}
+	s.ips[host]++
+	s.ipsMu.Unlock()
+
+	return conn, nil
 }
 
 // JoinRoom логика входа в комнату
@@ -92,6 +114,21 @@ func (s *TCPServer) Remove(roomID string, conn net.Conn) {
 		}
 		delete(s.rooms, roomID)
 	}
+
+	// Уменьшаем счетчик соединений для IP
+	host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err == nil {
+		s.ipsMu.Lock()
+		if s.ips[host] > 0 {
+			s.ips[host]--
+			// Чистим мапу, если соединений больше нет
+			if s.ips[host] == 0 {
+				delete(s.ips, host)
+			}
+		}
+		s.ipsMu.Unlock()
+	}
+
 	conn.Close()
 }
 

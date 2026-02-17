@@ -20,17 +20,22 @@ type Room struct {
 type TCPServer struct {
 	mu    sync.RWMutex
 	rooms map[string]*Room
+	ipsMu sync.Mutex
+	ips map[string]int
+	maxConnPerIP int
 }
 
-func NewTCPServer() *TCPServer {
+func NewTCPServer(maxConn int) *TCPServer {
 	return &TCPServer{
 		rooms: make(map[string]*Room),
+		ips:          make(map[string]int),
+		maxConnPerIP: maxConn,
 	}
 }
 
 func Run(cfg *config.Config) {
 
-	s := NewTCPServer()
+	s := NewTCPServer(cfg.MaxConn)
 
 	// Генерируем сертификат прямо в RAM
     cert, err := security.GenerateInMemoryCert()
@@ -67,11 +72,15 @@ func Run(cfg *config.Config) {
 }
 
 func (s *TCPServer) handleClient(conn net.Conn, timeout time.Duration) {
+	conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+
 	rawID, err := protocol.ReadRoomID(conn)
 	if err != nil {
 		conn.Close()
 		return
 	}
+	conn.SetReadDeadline(time.Time{})
+
 	roomID := hex.EncodeToString(rawID)
 
 	peers, err := s.JoinRoom(roomID, conn, timeout)

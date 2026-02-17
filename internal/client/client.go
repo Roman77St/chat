@@ -53,7 +53,7 @@ func Start() {
 		return
 	}
 
-    fmt.Print("Канал инициализирован.\n>")
+    fmt.Print("Канал инициализирован.\n> ")
 
 	startChatLoop(conn, chatKey, os.Stdout, os.Stdin)
 

@@ -7,6 +7,7 @@ type Config struct {
 	Port string
 	Path string
 	RoomTimeout time.Duration
+	MaxConn int
 }
 
 func New() *Config {
@@ -14,7 +15,9 @@ func New() *Config {
 		Host: "127.0.0.1", // По умолчанию только локальный хост (безопасно)
 		Port: "8080",
 		Path: "/ws",
-		RoomTimeout: time.Second*30,
+		RoomTimeout: time.Second*60,
+		MaxConn: 3,
+
 	}
 }
 
